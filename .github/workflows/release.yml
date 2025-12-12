@@ -28,7 +28,9 @@ jobs:
             build-essential \
             wget \
             imagemagick \
-            squashfs-tools
+            squashfs-tools \
+            fuse \
+            libfuse2
       
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
