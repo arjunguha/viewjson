@@ -48,7 +48,9 @@ jobs:
         run: cargo build --release
       
       - name: Build AppImage
-        run: ./appimage/build-appimage.sh
+        run: |
+          chmod +x appimage/build-appimage.sh
+          ./appimage/build-appimage.sh
       
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
