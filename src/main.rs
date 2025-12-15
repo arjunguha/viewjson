@@ -18,8 +18,9 @@ mod path_formatting;
 use gtk::prelude::*;
 use gtk::{
     Application, ApplicationWindow, Box as GtkBox, CellRendererText, Clipboard, Entry,
-    FileChooserAction, FileChooserDialog, IconSize, Image, Orientation, Paned, ResponseType,
-    ScrolledWindow, Separator, TextBuffer, TextView, TreeStore, TreeView, TreeViewColumn,
+    FileChooserAction, FileChooserDialog, IconSize, Image, Menu, MenuItem, Orientation, Paned,
+    ResponseType, ScrolledWindow, Separator, TextBuffer, TextView, TreeStore, TreeView,
+    TreeViewColumn,
 };
 use json_reader::{parse_file, parse_text_content, ParseResult};
 use path_formatting::{build_array_path, build_object_path};
@@ -56,8 +57,19 @@ fn build_ui(app: &Application, initial_files: &[String]) {
     let paned = Paned::new(gtk::Orientation::Horizontal);
 
     // Left pane: Tree view
+    let left_box = GtkBox::new(Orientation::Vertical, 6);
+    left_box.set_margin_start(6);
+    left_box.set_margin_end(6);
+    left_box.set_margin_top(6);
+    left_box.set_margin_bottom(6);
+
+    let tree_label = gtk::Label::new(Some("JSON Structure:"));
+    tree_label.set_halign(gtk::Align::Start);
+    left_box.pack_start(&tree_label, false, false, 0);
+
     let left_scroll = ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
     left_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    left_scroll.set_vexpand(true);
 
     // Create tree store with columns: name, value, json_path, full_value
     let tree_store = TreeStore::new(&[
@@ -92,22 +104,36 @@ fn build_ui(app: &Application, initial_files: &[String]) {
     tree_view.set_expander_column(Some(&col_name));
 
     left_scroll.add(&tree_view);
+    left_box.pack_start(&left_scroll, true, true, 0);
 
     // Right pane: Path and Value display
-    let right_box = GtkBox::new(Orientation::Vertical, 0);
+    let right_box = GtkBox::new(Orientation::Vertical, 6);
+    right_box.set_margin_start(6);
+    right_box.set_margin_end(6);
+    right_box.set_margin_top(6);
+    right_box.set_margin_bottom(6);
 
-    // Path display (single line)
+    // Path label and display
+    let path_label = gtk::Label::new(Some("JSON Path:"));
+    path_label.set_halign(gtk::Align::Start);
+    right_box.pack_start(&path_label, false, false, 0);
+
     let path_entry = Entry::new();
     path_entry.set_editable(false);
     path_entry.set_hexpand(true);
     path_entry.set_halign(gtk::Align::Fill);
+    path_entry.set_placeholder_text(Some("Select an item to view its JSON path"));
     right_box.pack_start(&path_entry, false, false, 0);
 
     // Separator
     let separator = Separator::new(Orientation::Horizontal);
-    right_box.pack_start(&separator, false, false, 0);
+    right_box.pack_start(&separator, false, false, 6);
 
-    // Value display (multi-line)
+    // Value label and display
+    let value_label = gtk::Label::new(Some("Value:"));
+    value_label.set_halign(gtk::Align::Start);
+    right_box.pack_start(&value_label, false, false, 0);
+
     let value_scroll = ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
     value_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     value_scroll.set_hexpand(true);
@@ -122,7 +148,7 @@ fn build_ui(app: &Application, initial_files: &[String]) {
     right_box.pack_start(&value_scroll, true, true, 0);
 
     // Add panes to paned widget
-    paned.add1(&left_scroll);
+    paned.add1(&left_box);
     paned.add2(&right_box);
     paned.set_position(400); // Initial split position
 
@@ -153,9 +179,36 @@ fn build_ui(app: &Application, initial_files: &[String]) {
             value_text_buffer_clone.set_text(&formatted_value);
         } else {
             path_entry_clone.set_text("");
-            value_text_buffer_clone.set_text("");
+            value_text_buffer_clone
+                .set_text("Select an item in the tree to view its JSON path and value");
+            path_entry_clone.set_placeholder_text(Some("Select an item to view its JSON path"));
         }
     });
+
+    // Helper function to remove a root node
+    let remove_root_node = |tree_store: &TreeStore,
+                            selection: &gtk::TreeSelection,
+                            path_entry: &Entry,
+                            value_text_buffer: &TextBuffer| {
+        if let Some((model, iter)) = selection.selected() {
+            // Check if this is a root node (no parent)
+            if model.iter_parent(&iter).is_none() {
+                // This is a root node - remove it
+                tree_store.remove(&iter);
+
+                // Clear the display if we deleted the selected item
+                path_entry.set_text("");
+                value_text_buffer
+                    .set_text("Select an item in the tree to view its JSON path and value");
+                path_entry.set_placeholder_text(Some("Select an item to view its JSON path"));
+
+                // Try to select the next root node if available
+                if let Some(first_iter) = tree_store.iter_first() {
+                    selection.select_iter(&first_iter);
+                }
+            }
+        }
+    };
 
     // Handle Delete key to close files (root nodes)
     let tree_store_for_delete = tree_store.clone();
@@ -169,21 +222,55 @@ fn build_ui(app: &Application, initial_files: &[String]) {
         if let Some(key_name) = keyval.name() {
             if key_name.as_str() == "Delete" || key_name.as_str() == "BackSpace" {
                 let selection = tree_view.selection();
+                remove_root_node(
+                    &tree_store_for_delete,
+                    &selection,
+                    &path_entry_for_delete,
+                    &value_text_buffer_for_delete,
+                );
+                return gtk::glib::Propagation::Stop;
+            }
+        }
+        gtk::glib::Propagation::Proceed
+    });
+
+    // Add context menu for removing files
+    let tree_store_for_menu = tree_store.clone();
+    let path_entry_for_menu = path_entry.clone();
+    let value_text_buffer_for_menu = value_text_buffer.clone();
+    let tree_view_for_menu = tree_view.clone();
+    tree_view.connect_button_press_event(move |tree_view, event| {
+        // Check for right-click (button 3)
+        if event.button() == 3 {
+            let (x, y) = event.position();
+            // Get the path at the click position
+            if let Some((Some(path), _, _, _)) = tree_view.path_at_pos(x as i32, y as i32) {
+                let selection = tree_view.selection();
+                selection.select_path(&path);
+
+                // Check if a root node is selected before showing menu
                 if let Some((model, iter)) = selection.selected() {
-                    // Check if this is a root node (no parent)
                     if model.iter_parent(&iter).is_none() {
-                        // This is a root node - remove it
-                        tree_store_for_delete.remove(&iter);
+                        // Create context menu
+                        let menu = Menu::new();
+                        let remove_item = MenuItem::with_label("Remove File");
+                        let tree_store_clone = tree_store_for_menu.clone();
+                        let path_entry_clone = path_entry_for_menu.clone();
+                        let value_text_buffer_clone = value_text_buffer_for_menu.clone();
+                        let tree_view_clone = tree_view_for_menu.clone();
+                        remove_item.connect_activate(move |_| {
+                            let selection = tree_view_clone.selection();
+                            remove_root_node(
+                                &tree_store_clone,
+                                &selection,
+                                &path_entry_clone,
+                                &value_text_buffer_clone,
+                            );
+                        });
 
-                        // Clear the display if we deleted the selected item
-                        path_entry_for_delete.set_text("");
-                        value_text_buffer_for_delete.set_text("");
-
-                        // Try to select the next root node if available
-                        if let Some(first_iter) = tree_store_for_delete.iter_first() {
-                            selection.select_iter(&first_iter);
-                        }
-
+                        menu.append(&remove_item);
+                        remove_item.show_all();
+                        menu.popup_at_pointer(Some(event));
                         return gtk::glib::Propagation::Stop;
                     }
                 }
@@ -199,7 +286,7 @@ fn build_ui(app: &Application, initial_files: &[String]) {
 
     let open_button = gtk::Button::builder()
         .label("Open")
-        .tooltip_text("Open a JSON/JSONL file")
+        .tooltip_text("Open JSON, JSONL, YAML, or Parquet file")
         .build();
     let open_icon = Image::from_icon_name(Some("document-open"), IconSize::Button);
     open_button.set_image(Some(&open_icon));
@@ -214,7 +301,7 @@ fn build_ui(app: &Application, initial_files: &[String]) {
         let window_clone2 = window_clone.clone();
 
         let dialog = FileChooserDialog::new(
-            Some("Open JSON File"),
+            Some("Open File"),
             Some(&window_clone2),
             FileChooserAction::Open,
         );
@@ -249,7 +336,7 @@ fn build_ui(app: &Application, initial_files: &[String]) {
     // Add clipboard button
     let clipboard_button = gtk::Button::builder()
         .label("Paste")
-        .tooltip_text("Load JSON/JSONL/YAML from clipboard")
+        .tooltip_text("Paste JSON, JSONL, or YAML from clipboard")
         .build();
     let clipboard_icon = Image::from_icon_name(Some("edit-paste"), IconSize::Button);
     clipboard_button.set_image(Some(&clipboard_icon));
