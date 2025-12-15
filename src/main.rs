@@ -12,6 +12,7 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+mod json_reader;
 mod path_formatting;
 
 use gtk::prelude::*;
@@ -20,29 +21,30 @@ use gtk::{
     FileChooserAction, FileChooserDialog, IconSize, Image, Orientation, Paned, ResponseType,
     ScrolledWindow, Separator, TextBuffer, TextView, TreeStore, TreeView, TreeViewColumn,
 };
+use json_reader::{parse_file, parse_text_content, ParseResult};
 use path_formatting::{build_array_path, build_object_path};
 use serde_json::Value;
-use std::fs;
 use std::path::Path;
 
 fn main() {
     // Read command-line arguments before GTK initialization
-    let file_path = std::env::args().nth(1);
+    // Collect all arguments after the program name
+    let file_paths: Vec<String> = std::env::args().skip(1).collect();
 
     let app = Application::builder()
         .application_id("com.example.viewjson")
         .build();
 
-    let file_path_clone = file_path.clone();
+    let file_paths_clone = file_paths.clone();
     app.connect_activate(move |app| {
-        build_ui(app, file_path_clone.as_deref());
+        build_ui(app, &file_paths_clone);
     });
 
     // Run with empty args to prevent GTK from trying to handle file arguments
     app.run_with_args(&[] as &[&str]);
 }
 
-fn build_ui(app: &Application, initial_file: Option<&str>) {
+fn build_ui(app: &Application, initial_files: &[String]) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("JSON Viewer")
@@ -247,7 +249,7 @@ fn build_ui(app: &Application, initial_file: Option<&str>) {
     // Add clipboard button
     let clipboard_button = gtk::Button::builder()
         .label("Paste")
-        .tooltip_text("Load JSON from clipboard")
+        .tooltip_text("Load JSON/JSONL/YAML from clipboard")
         .build();
     let clipboard_icon = Image::from_icon_name(Some("edit-paste"), IconSize::Button);
     clipboard_button.set_image(Some(&clipboard_icon));
@@ -315,8 +317,8 @@ fn build_ui(app: &Application, initial_file: Option<&str>) {
     window.add(&paned);
     window.show_all();
 
-    // Try to load from command line argument
-    if let Some(file_path) = initial_file {
+    // Try to load from command line arguments
+    for file_path in initial_files {
         let path = Path::new(file_path);
         if path.exists() {
             let name = path
@@ -329,23 +331,81 @@ fn build_ui(app: &Application, initial_file: Option<&str>) {
     }
 }
 
+/// Adds a JSONL result to the tree store
+fn add_jsonl_to_tree(
+    tree_store: &TreeStore,
+    json_values: &[Value],
+    display_name: &str,
+    root_path: &str,
+) {
+    let root_iter = tree_store.append(None);
+    let root_json = serde_json::json!({ "lines": json_values.len() });
+    let root_name = format!("{} (JSONL)", display_name);
+    tree_store.set_value(&root_iter, 0, &root_name.to_value());
+    tree_store.set_value(
+        &root_iter,
+        1,
+        &format!("{} objects", json_values.len()).to_value(),
+    );
+    tree_store.set_value(&root_iter, 2, &root_path.to_value());
+    tree_store.set_value(
+        &root_iter,
+        3,
+        &serde_json::to_string(&root_json)
+            .unwrap_or_default()
+            .to_value(),
+    );
+
+    for (idx, value) in json_values.iter().enumerate() {
+        let line_iter = tree_store.append(Some(&root_iter));
+        let path = build_array_path(root_path, idx);
+        let name = format!("Line {}", idx + 1);
+        set_tree_node_values(tree_store, &line_iter, &name, value, &path);
+        populate_tree(tree_store, &line_iter, value, &path);
+    }
+}
+
+/// Adds a single JSON value to the tree store
+fn add_single_value_to_tree(
+    tree_store: &TreeStore,
+    value: &Value,
+    root_name: &str,
+) {
+    let root_iter = tree_store.append(None);
+    set_tree_node_values(tree_store, &root_iter, root_name, value, root_name);
+    populate_tree(tree_store, &root_iter, value, root_name);
+}
+
+/// Loads parsed content into the tree store
+fn load_parse_result(
+    result: Result<ParseResult, json_reader::ParseError>,
+    default_name: &str,
+    tree_store: &TreeStore,
+    value_text_buffer: &TextBuffer,
+    error_prefix: &str,
+) {
+    match result {
+        Ok(ParseResult::JsonL(json_values)) => {
+            add_jsonl_to_tree(tree_store, &json_values, default_name, default_name);
+        }
+        Ok(ParseResult::Single(value)) => {
+            add_single_value_to_tree(tree_store, &value, default_name);
+        }
+        Err(e) => {
+            value_text_buffer.set_text(&format!("{}: {}", error_prefix, e));
+        }
+    }
+}
+
 fn load_json_content_from_file(
     path: &Path,
     name: Option<&str>,
     tree_store: &TreeStore,
     value_text_buffer: &TextBuffer,
 ) {
-    // Read file
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) => {
-            value_text_buffer.set_text(&format!("Error reading file: {}", e));
-            return;
-        }
-    };
-
     let display_name = name.unwrap_or("File");
-    load_json_content(&content, Some(display_name), tree_store, value_text_buffer);
+    let result = parse_file(path);
+    load_parse_result(result, &display_name, tree_store, value_text_buffer, "Error parsing file");
 }
 
 fn load_json_content(
@@ -354,83 +414,27 @@ fn load_json_content(
     tree_store: &TreeStore,
     value_text_buffer: &TextBuffer,
 ) {
-    // Try to parse as JSONL first (multiple JSON objects, one per line)
-    let lines: Vec<&str> = content.lines().collect();
-    let mut json_values: Vec<Value> = Vec::new();
+    let display_name = name.unwrap_or("Content");
+    let result = parse_text_content(content);
+    load_parse_result(result, &display_name, tree_store, value_text_buffer, "Error parsing content");
+}
 
-    if lines.len() > 1 {
-        // Try JSONL format
-        for (_idx, line) in lines.iter().enumerate() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<Value>(line) {
-                Ok(value) => json_values.push(value),
-                Err(_) => {
-                    // If JSONL parsing fails, try as single JSON
-                    json_values.clear();
-                    break;
-                }
-            }
-        }
-
-        if !json_values.is_empty() {
-            // JSONL format - create root node for each line
-            let root_iter = tree_store.append(None);
-            let root_json = serde_json::json!({ "lines": json_values.len() });
-            let root_name = format!("{} (JSONL)", name.unwrap_or("Content"));
-            tree_store.set_value(&root_iter, 0, &root_name.to_value());
-            tree_store.set_value(
-                &root_iter,
-                1,
-                &format!("{} objects", json_values.len()).to_value(),
-            );
-            let root_path = format!("{}", name.unwrap_or("root"));
-            tree_store.set_value(&root_iter, 2, &root_path.to_value());
-            tree_store.set_value(
-                &root_iter,
-                3,
-                &serde_json::to_string(&root_json)
-                    .unwrap_or_default()
-                    .to_value(),
-            );
-
-            for (idx, value) in json_values.iter().enumerate() {
-                let line_iter = tree_store.append(Some(&root_iter));
-                let path = build_array_path(&root_path, idx);
-                tree_store.set_value(&line_iter, 0, &format!("Line {}", idx + 1).to_value());
-                tree_store.set_value(&line_iter, 1, &format_value_preview(value).to_value());
-                tree_store.set_value(&line_iter, 2, &path.to_value());
-                tree_store.set_value(
-                    &line_iter,
-                    3,
-                    &serde_json::to_string(value).unwrap_or_default().to_value(),
-                );
-                populate_tree(&tree_store, &line_iter, value, &path);
-            }
-            return;
-        }
-    }
-
-    // Try to parse as single JSON
-    match serde_json::from_str::<Value>(&content) {
-        Ok(value) => {
-            let root_iter = tree_store.append(None);
-            let root_name = name.unwrap_or("root");
-            tree_store.set_value(&root_iter, 0, &root_name.to_value());
-            tree_store.set_value(&root_iter, 1, &format_value_preview(&value).to_value());
-            tree_store.set_value(&root_iter, 2, &root_name.to_value());
-            tree_store.set_value(
-                &root_iter,
-                3,
-                &serde_json::to_string(&value).unwrap_or_default().to_value(),
-            );
-            populate_tree(tree_store, &root_iter, &value, root_name);
-        }
-        Err(e) => {
-            value_text_buffer.set_text(&format!("Error parsing JSON: {}", e));
-        }
-    }
+/// Sets all column values for a tree node
+fn set_tree_node_values(
+    tree_store: &TreeStore,
+    iter: &gtk::TreeIter,
+    name: &str,
+    value: &Value,
+    path: &str,
+) {
+    tree_store.set_value(iter, 0, &name.to_value());
+    tree_store.set_value(iter, 1, &format_value_preview(value).to_value());
+    tree_store.set_value(iter, 2, &path.to_value());
+    tree_store.set_value(
+        iter,
+        3,
+        &serde_json::to_string(value).unwrap_or_default().to_value(),
+    );
 }
 
 fn populate_tree(tree_store: &TreeStore, parent: &gtk::TreeIter, value: &Value, path: &str) {
@@ -439,14 +443,7 @@ fn populate_tree(tree_store: &TreeStore, parent: &gtk::TreeIter, value: &Value, 
             for (key, val) in map.iter() {
                 let iter = tree_store.append(Some(parent));
                 let new_path = build_object_path(path, key);
-                tree_store.set_value(&iter, 0, &key.to_value());
-                tree_store.set_value(&iter, 1, &format_value_preview(val).to_value());
-                tree_store.set_value(&iter, 2, &new_path.to_value());
-                tree_store.set_value(
-                    &iter,
-                    3,
-                    &serde_json::to_string(val).unwrap_or_default().to_value(),
-                );
+                set_tree_node_values(tree_store, &iter, key, val, &new_path);
                 populate_tree(tree_store, &iter, val, &new_path);
             }
         }
@@ -454,14 +451,8 @@ fn populate_tree(tree_store: &TreeStore, parent: &gtk::TreeIter, value: &Value, 
             for (idx, val) in arr.iter().enumerate() {
                 let iter = tree_store.append(Some(parent));
                 let new_path = build_array_path(path, idx);
-                tree_store.set_value(&iter, 0, &format!("[{}]", idx).to_value());
-                tree_store.set_value(&iter, 1, &format_value_preview(val).to_value());
-                tree_store.set_value(&iter, 2, &new_path.to_value());
-                tree_store.set_value(
-                    &iter,
-                    3,
-                    &serde_json::to_string(val).unwrap_or_default().to_value(),
-                );
+                let name = format!("[{}]", idx);
+                set_tree_node_values(tree_store, &iter, &name, val, &new_path);
                 populate_tree(tree_store, &iter, val, &new_path);
             }
         }
