@@ -158,30 +158,48 @@ fn build_ui(app: &Application, initial_files: &[String]) {
     let value_text_buffer = value_text_view.buffer().unwrap();
     let value_text_buffer_clone = value_text_buffer.clone();
 
-    selection.connect_changed(move |sel| {
-        if let Some((model, iter)) = sel.selected() {
-            let path = model.value(&iter, 2).get::<String>().unwrap_or_default();
-            let full_value = model.value(&iter, 3).get::<String>().unwrap_or_default();
+    // We'll update this in the selection handler
+    let remove_file_menu_item_for_selection =
+        std::rc::Rc::new(std::cell::RefCell::new(None::<MenuItem>));
 
-            // Set path in the entry
-            path_entry_clone.set_text(&path);
+    selection.connect_changed({
+        let remove_file_menu_item_for_selection = remove_file_menu_item_for_selection.clone();
+        move |sel| {
+            if let Some((model, iter)) = sel.selected() {
+                let path = model.value(&iter, 2).get::<String>().unwrap_or_default();
+                let full_value = model.value(&iter, 3).get::<String>().unwrap_or_default();
 
-            // Format the JSON value nicely
-            let formatted_value = if !full_value.is_empty() {
-                match serde_json::from_str::<Value>(&full_value) {
-                    Ok(v) => format_value_literal(&v),
-                    Err(_) => full_value,
+                // Set path in the entry
+                path_entry_clone.set_text(&path);
+
+                // Format the JSON value nicely
+                let formatted_value = if !full_value.is_empty() {
+                    match serde_json::from_str::<Value>(&full_value) {
+                        Ok(v) => format_value_literal(&v),
+                        Err(_) => full_value,
+                    }
+                } else {
+                    model.value(&iter, 1).get::<String>().unwrap_or_default()
+                };
+
+                value_text_buffer_clone.set_text(&formatted_value);
+
+                // Enable/disable Remove File menu item based on whether a root node is selected
+                if let Some(ref menu_item) = *remove_file_menu_item_for_selection.borrow() {
+                    let is_root_node = model.iter_parent(&iter).is_none();
+                    menu_item.set_sensitive(is_root_node);
                 }
             } else {
-                model.value(&iter, 1).get::<String>().unwrap_or_default()
-            };
+                path_entry_clone.set_text("");
+                value_text_buffer_clone
+                    .set_text("Select an item in the tree to view its JSON path and value");
+                path_entry_clone.set_placeholder_text(Some("Select an item to view its JSON path"));
 
-            value_text_buffer_clone.set_text(&formatted_value);
-        } else {
-            path_entry_clone.set_text("");
-            value_text_buffer_clone
-                .set_text("Select an item in the tree to view its JSON path and value");
-            path_entry_clone.set_placeholder_text(Some("Select an item to view its JSON path"));
+                // Disable Remove File menu item when nothing is selected
+                if let Some(ref menu_item) = *remove_file_menu_item_for_selection.borrow() {
+                    menu_item.set_sensitive(false);
+                }
+            }
         }
     });
 
@@ -391,6 +409,12 @@ fn build_ui(app: &Application, initial_files: &[String]) {
 
     // Remove File menu item
     let remove_file_menu_item = MenuItem::with_label("Remove File");
+    // Initially disable the menu item (no selection at startup)
+    remove_file_menu_item.set_sensitive(false);
+
+    // Store reference for selection handler
+    *remove_file_menu_item_for_selection.borrow_mut() = Some(remove_file_menu_item.clone());
+
     let tree_store_for_remove = tree_store.clone();
     let selection_for_remove = selection.clone();
     let path_entry_for_remove = path_entry.clone();
