@@ -18,7 +18,7 @@ mod path_formatting;
 use gtk::prelude::*;
 use gtk::{
     Application, ApplicationWindow, Box as GtkBox, CellRendererText, Clipboard, Entry,
-    FileChooserAction, FileChooserDialog, IconSize, Image, Menu, MenuItem, Orientation, Paned,
+    FileChooserAction, FileChooserDialog, Menu, MenuBar, MenuItem, Orientation, Paned,
     ResponseType, ScrolledWindow, Separator, TextBuffer, TextView, TreeStore, TreeView,
     TreeViewColumn,
 };
@@ -279,23 +279,21 @@ fn build_ui(app: &Application, initial_files: &[String]) {
         gtk::glib::Propagation::Proceed
     });
 
-    // Add file chooser button
-    let header_bar = gtk::HeaderBar::new();
-    header_bar.set_show_close_button(true);
-    header_bar.set_title(Some("JSON Viewer"));
+    // Create menu bar
+    let menu_bar = MenuBar::new();
 
-    let open_button = gtk::Button::builder()
-        .label("Open")
-        .tooltip_text("Open JSON, JSONL, YAML, or Parquet file")
-        .build();
-    let open_icon = Image::from_icon_name(Some("document-open"), IconSize::Button);
-    open_button.set_image(Some(&open_icon));
-    open_button.set_always_show_image(true);
+    // File menu
+    let file_menu = Menu::new();
+    let file_menu_item = MenuItem::with_label("File");
+    file_menu_item.set_submenu(Some(&file_menu));
+
+    // Open menu item
+    let open_menu_item = MenuItem::with_label("Open");
     let tree_store_for_open = tree_store.clone();
     let value_text_buffer_for_open = value_text_buffer.clone();
     let window_clone = window.clone();
 
-    open_button.connect_clicked(move |_| {
+    open_menu_item.connect_activate(move |_| {
         let tree_store_clone = tree_store_for_open.clone();
         let value_text_buffer_clone = value_text_buffer_for_open.clone();
         let window_clone2 = window_clone.clone();
@@ -333,18 +331,19 @@ fn build_ui(app: &Application, initial_files: &[String]) {
         dialog.show();
     });
 
-    // Add clipboard button
-    let clipboard_button = gtk::Button::builder()
-        .label("Paste")
-        .tooltip_text("Paste JSON, JSONL, or YAML from clipboard")
-        .build();
-    let clipboard_icon = Image::from_icon_name(Some("edit-paste"), IconSize::Button);
-    clipboard_button.set_image(Some(&clipboard_icon));
-    clipboard_button.set_always_show_image(true);
+    file_menu.append(&open_menu_item);
+
+    // Edit menu
+    let edit_menu = Menu::new();
+    let edit_menu_item = MenuItem::with_label("Edit");
+    edit_menu_item.set_submenu(Some(&edit_menu));
+
+    // Paste menu item
+    let paste_menu_item = MenuItem::with_label("Paste");
     let tree_store_for_clipboard = tree_store.clone();
     let value_text_buffer_for_clipboard = value_text_buffer.clone();
 
-    clipboard_button.connect_clicked(move |_| {
+    paste_menu_item.connect_activate(move |_| {
         let tree_store_clone = tree_store_for_clipboard.clone();
         let value_text_buffer_clone = value_text_buffer_for_clipboard.clone();
 
@@ -363,18 +362,12 @@ fn build_ui(app: &Application, initial_files: &[String]) {
         });
     });
 
-    // Add copy value button
-    let copy_value_button = gtk::Button::builder()
-        .label("Copy")
-        .tooltip_text("Copy selected value to clipboard")
-        .build();
-    let copy_icon = Image::from_icon_name(Some("edit-copy"), IconSize::Button);
-    copy_value_button.set_image(Some(&copy_icon));
-    copy_value_button.set_always_show_image(true);
+    // Copy menu item
+    let copy_menu_item = MenuItem::with_label("Copy");
     let selection_for_copy = selection.clone();
     let value_text_buffer_for_copy = value_text_buffer.clone();
 
-    copy_value_button.connect_clicked(move |_| {
+    copy_menu_item.connect_activate(move |_| {
         let clipboard = Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
 
         // Get the currently selected value from the text buffer
@@ -396,12 +389,50 @@ fn build_ui(app: &Application, initial_files: &[String]) {
         }
     });
 
-    header_bar.pack_start(&open_button);
-    header_bar.pack_start(&clipboard_button);
-    header_bar.pack_start(&copy_value_button);
-    window.set_titlebar(Some(&header_bar));
+    // Remove File menu item
+    let remove_file_menu_item = MenuItem::with_label("Remove File");
+    let tree_store_for_remove = tree_store.clone();
+    let selection_for_remove = selection.clone();
+    let path_entry_for_remove = path_entry.clone();
+    let value_text_buffer_for_remove = value_text_buffer.clone();
 
-    window.add(&paned);
+    remove_file_menu_item.connect_activate(move |_| {
+        let selection = selection_for_remove.clone();
+        if let Some((model, iter)) = selection.selected() {
+            // Check if this is a root node (no parent)
+            if model.iter_parent(&iter).is_none() {
+                // This is a root node - remove it
+                tree_store_for_remove.remove(&iter);
+
+                // Clear the display if we deleted the selected item
+                path_entry_for_remove.set_text("");
+                value_text_buffer_for_remove
+                    .set_text("Select an item in the tree to view its JSON path and value");
+                path_entry_for_remove
+                    .set_placeholder_text(Some("Select an item to view its JSON path"));
+
+                // Try to select the next root node if available
+                if let Some(first_iter) = tree_store_for_remove.iter_first() {
+                    selection.select_iter(&first_iter);
+                }
+            }
+        }
+    });
+
+    edit_menu.append(&paste_menu_item);
+    edit_menu.append(&copy_menu_item);
+    edit_menu.append(&remove_file_menu_item);
+
+    // Add menus to menu bar
+    menu_bar.append(&file_menu_item);
+    menu_bar.append(&edit_menu_item);
+
+    // Create main container with menu bar and paned
+    let main_box = GtkBox::new(Orientation::Vertical, 0);
+    main_box.pack_start(&menu_bar, false, false, 0);
+    main_box.pack_start(&paned, true, true, 0);
+
+    window.add(&main_box);
     window.show_all();
 
     // Try to load from command line arguments
