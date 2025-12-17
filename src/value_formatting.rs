@@ -22,8 +22,9 @@ pub fn format_value_preview(value: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => n.to_string(),
         Value::String(s) => {
-            if s.len() > 50 {
-                format!("\"{}\"...", &s[..50])
+            if s.chars().count() > 50 {
+                let truncated: String = s.chars().take(50).collect();
+                format!("\"{}\"...", truncated)
             } else {
                 format!("\"{}\"", s)
             }
