@@ -15,6 +15,8 @@
 mod json_reader;
 mod path_formatting;
 mod search;
+mod tree_builder;
+mod value_formatting;
 
 use gtk::prelude::*;
 use gtk::{
@@ -24,10 +26,10 @@ use gtk::{
     TreeView, TreeViewColumn,
 };
 use json_reader::{parse_file, parse_text_content, ParseResult};
-use path_formatting::{build_array_path, build_object_path};
 use search::{find_all_occurrences, find_occurrence_to_highlight};
-use serde_json::Value;
 use std::path::Path;
+use tree_builder::{add_jsonl_to_tree, add_single_value_to_tree};
+use value_formatting::format_value_from_string;
 
 fn main() {
     // Read command-line arguments before GTK initialization
@@ -182,14 +184,8 @@ fn build_ui(app: &Application, initial_files: &[String]) {
                 path_entry_clone.set_text(&path);
 
                 // Format the JSON value nicely
-                let formatted_value = if !full_value.is_empty() {
-                    match serde_json::from_str::<Value>(&full_value) {
-                        Ok(v) => format_value_literal(&v),
-                        Err(_) => full_value,
-                    }
-                } else {
-                    model.value(&iter, 1).get::<String>().unwrap_or_default()
-                };
+                let preview = model.value(&iter, 1).get::<String>().unwrap_or_default();
+                let formatted_value = format_value_from_string(&full_value, &preview);
 
                 value_text_buffer_clone.set_text(&formatted_value);
 
@@ -213,10 +209,12 @@ fn build_ui(app: &Application, initial_files: &[String]) {
     });
 
     // Helper function to remove a root node
-    let remove_root_node = |tree_store: &TreeStore,
-                            selection: &gtk::TreeSelection,
-                            path_entry: &Entry,
-                            value_text_buffer: &TextBuffer| {
+    fn remove_root_node(
+        tree_store: &TreeStore,
+        selection: &gtk::TreeSelection,
+        path_entry: &Entry,
+        value_text_buffer: &TextBuffer,
+    ) {
         if let Some((model, iter)) = selection.selected() {
             // Check if this is a root node (no parent)
             if model.iter_parent(&iter).is_none() {
@@ -235,31 +233,7 @@ fn build_ui(app: &Application, initial_files: &[String]) {
                 }
             }
         }
-    };
-
-    // Handle Delete key to close files (root nodes)
-    let tree_store_for_delete = tree_store.clone();
-    let path_entry_for_delete = path_entry.clone();
-    let value_text_buffer_for_delete = value_text_buffer.clone();
-    tree_view.connect_key_press_event(move |tree_view, event| {
-        let keyval = event.keyval();
-
-        // Check for Delete key by name
-        // Delete key is typically named "Delete" and Backspace is "BackSpace"
-        if let Some(key_name) = keyval.name() {
-            if key_name.as_str() == "Delete" || key_name.as_str() == "BackSpace" {
-                let selection = tree_view.selection();
-                remove_root_node(
-                    &tree_store_for_delete,
-                    &selection,
-                    &path_entry_for_delete,
-                    &value_text_buffer_for_delete,
-                );
-                return gtk::glib::Propagation::Stop;
-            }
-        }
-        gtk::glib::Propagation::Proceed
-    });
+    }
 
     // Add context menu for removing files
     let tree_store_for_menu = tree_store.clone();
@@ -461,6 +435,16 @@ fn build_ui(app: &Application, initial_files: &[String]) {
     // Initially disable the menu item (no selection at startup)
     remove_file_menu_item.set_sensitive(false);
 
+    // Add Delete key accelerator
+    gtk::prelude::GtkMenuItemExt::set_accel_path(&remove_file_menu_item, Some("<Delete>"));
+    remove_file_menu_item.add_accelerator(
+        "activate",
+        &accel_group,
+        *keys::Delete as u32,
+        ModifierType::empty(),
+        gtk::AccelFlags::VISIBLE,
+    );
+
     // Store reference for selection handler
     *remove_file_menu_item_for_selection.borrow_mut() = Some(remove_file_menu_item.clone());
 
@@ -471,25 +455,12 @@ fn build_ui(app: &Application, initial_files: &[String]) {
 
     remove_file_menu_item.connect_activate(move |_| {
         let selection = selection_for_remove.clone();
-        if let Some((model, iter)) = selection.selected() {
-            // Check if this is a root node (no parent)
-            if model.iter_parent(&iter).is_none() {
-                // This is a root node - remove it
-                tree_store_for_remove.remove(&iter);
-
-                // Clear the display if we deleted the selected item
-                path_entry_for_remove.set_text("");
-                value_text_buffer_for_remove
-                    .set_text("Select an item in the tree to view its JSON path and value");
-                path_entry_for_remove
-                    .set_placeholder_text(Some("Select an item to view its JSON path"));
-
-                // Try to select the next root node if available
-                if let Some(first_iter) = tree_store_for_remove.iter_first() {
-                    selection.select_iter(&first_iter);
-                }
-            }
-        }
+        remove_root_node(
+            &tree_store_for_remove,
+            &selection,
+            &path_entry_for_remove,
+            &value_text_buffer_for_remove,
+        );
     });
 
     // Find menu item
@@ -613,15 +584,7 @@ fn build_ui(app: &Application, initial_files: &[String]) {
 
                         // Find all occurrences in the value
                         // We need to format it the same way as we display it, so offsets match
-                        let value_to_search = if !full_value.is_empty() {
-                            // Format the value the same way as we display it
-                            match serde_json::from_str::<Value>(&full_value) {
-                                Ok(v) => format_value_literal(&v),
-                                Err(_) => full_value.clone(),
-                            }
-                        } else {
-                            value_preview.clone()
-                        };
+                        let value_to_search = format_value_from_string(&full_value, &value_preview);
                         let value_occurrences =
                             find_all_occurrences(&value_to_search, search_text, case_sensitive);
                         for (_start, _end) in value_occurrences {
@@ -716,17 +679,11 @@ fn build_ui(app: &Application, initial_files: &[String]) {
                         .unwrap_or_default();
 
                     // Format the JSON value nicely - must match the formatting used during search
-                    let formatted_value = if !full_value.is_empty() {
-                        match serde_json::from_str::<Value>(&full_value) {
-                            Ok(v) => format_value_literal(&v),
-                            Err(_) => full_value.clone(),
-                        }
-                    } else {
-                        tree_store
-                            .value(&iter, 1)
-                            .get::<String>()
-                            .unwrap_or_default()
-                    };
+                    let preview = tree_store
+                        .value(&iter, 1)
+                        .get::<String>()
+                        .unwrap_or_default();
+                    let formatted_value = format_value_from_string(&full_value, &preview);
 
                     // Set the text in the buffer
                     value_text_buffer.set_text(&formatted_value);
@@ -1136,37 +1093,6 @@ fn build_ui(app: &Application, initial_files: &[String]) {
         });
     });
 
-    // Connect Ctrl+F keyboard shortcut via window key press event
-    // This works even when menu bar doesn't have focus
-    let search_toolbar_for_accel = search_toolbar.clone();
-    let search_entry_for_accel = search_entry.clone();
-    window.connect_key_press_event(move |_, event| {
-        let keyval = event.keyval();
-        let state = event.state();
-
-        // Check for Ctrl+F (or Cmd+F on macOS)
-        // Use key name to be more reliable across different keyboard layouts
-        if let Some(key_name) = keyval.name() {
-            let is_f_key = key_name.as_str() == "f" || key_name.as_str() == "F";
-            let has_ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
-            let has_meta = state.contains(gtk::gdk::ModifierType::META_MASK);
-
-            if is_f_key && (has_ctrl || has_meta) {
-                search_toolbar_for_accel.set_no_show_all(false);
-                search_toolbar_for_accel.set_visible(true);
-                search_toolbar_for_accel.show_all();
-                // Use GLib idle to ensure focus happens after widget is shown
-                let search_entry_clone = search_entry_for_accel.clone();
-                glib::idle_add_local(move || {
-                    search_entry_clone.grab_focus();
-                    glib::ControlFlow::Break
-                });
-                return gtk::glib::Propagation::Stop;
-            }
-        }
-        gtk::glib::Propagation::Proceed
-    });
-
     // Create main container with menu bar, search toolbar, and paned
     let main_box = GtkBox::new(Orientation::Vertical, 0);
     main_box.pack_start(&menu_bar, false, false, 0);
@@ -1188,50 +1114,6 @@ fn build_ui(app: &Application, initial_files: &[String]) {
             load_json_content_from_file(path, Some(&name), &tree_store, &value_text_buffer);
         }
     }
-}
-
-/// Adds a JSONL result to the tree store
-fn add_jsonl_to_tree(
-    tree_store: &TreeStore,
-    json_values: &[Value],
-    display_name: &str,
-    root_path: &str,
-) {
-    let root_iter = tree_store.append(None);
-    let root_json = serde_json::json!({ "lines": json_values.len() });
-    let root_name = format!("{} (JSONL)", display_name);
-    tree_store.set_value(&root_iter, 0, &root_name.to_value());
-    tree_store.set_value(
-        &root_iter,
-        1,
-        &format!("{} objects", json_values.len()).to_value(),
-    );
-    tree_store.set_value(&root_iter, 2, &root_path.to_value());
-    tree_store.set_value(
-        &root_iter,
-        3,
-        &serde_json::to_string(&root_json)
-            .unwrap_or_default()
-            .to_value(),
-    );
-
-    for (idx, value) in json_values.iter().enumerate() {
-        let line_iter = tree_store.append(Some(&root_iter));
-        let path = build_array_path(root_path, idx);
-        let name = format!("Line {}", idx + 1);
-        set_tree_node_values(tree_store, &line_iter, &name, value, &path);
-        populate_tree(tree_store, &line_iter, value, &path);
-    }
-}
-
-/// Adds a single JSON value to the tree store
-fn add_single_value_to_tree(tree_store: &TreeStore, value: &Value, root_name: &str) {
-    let root_iter = tree_store.append(None);
-    // Use "$" as the root path for single objects/arrays (JSONPath notation)
-    // This ensures proper path generation for nested structures
-    let root_path = "$";
-    set_tree_node_values(tree_store, &root_iter, root_name, value, root_path);
-    populate_tree(tree_store, &root_iter, value, root_path);
 }
 
 /// Loads parsed content into the tree store
@@ -1287,78 +1169,4 @@ fn load_json_content(
         value_text_buffer,
         "Error parsing content",
     );
-}
-
-/// Sets all column values for a tree node
-fn set_tree_node_values(
-    tree_store: &TreeStore,
-    iter: &gtk::TreeIter,
-    name: &str,
-    value: &Value,
-    path: &str,
-) {
-    tree_store.set_value(iter, 0, &name.to_value());
-    tree_store.set_value(iter, 1, &format_value_preview(value).to_value());
-    tree_store.set_value(iter, 2, &path.to_value());
-    tree_store.set_value(
-        iter,
-        3,
-        &serde_json::to_string(value).unwrap_or_default().to_value(),
-    );
-}
-
-fn populate_tree(tree_store: &TreeStore, parent: &gtk::TreeIter, value: &Value, path: &str) {
-    match value {
-        Value::Object(map) => {
-            for (key, val) in map.iter() {
-                let iter = tree_store.append(Some(parent));
-                let new_path = build_object_path(path, key);
-                set_tree_node_values(tree_store, &iter, key, val, &new_path);
-                populate_tree(tree_store, &iter, val, &new_path);
-            }
-        }
-        Value::Array(arr) => {
-            for (idx, val) in arr.iter().enumerate() {
-                let iter = tree_store.append(Some(parent));
-                let new_path = build_array_path(path, idx);
-                let name = format!("[{}]", idx);
-                set_tree_node_values(tree_store, &iter, &name, val, &new_path);
-                populate_tree(tree_store, &iter, val, &new_path);
-            }
-        }
-        _ => {
-            // Leaf value, already set in parent call
-        }
-    }
-}
-
-fn format_value_preview(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        Value::String(s) => {
-            if s.len() > 50 {
-                format!("\"{}\"...", &s[..50])
-            } else {
-                format!("\"{}\"", s)
-            }
-        }
-        Value::Array(arr) => format!("Array[{}]", arr.len()),
-        Value::Object(map) => format!("Object{{{}}}", map.len()),
-    }
-}
-
-fn format_value_literal(value: &Value) -> String {
-    match value {
-        Value::String(s) => {
-            // Display string literally - escape sequences are already unescaped by serde_json
-            // So we just display the string as-is
-            s.clone()
-        }
-        _ => {
-            // For non-string values, format as pretty JSON
-            serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
-        }
-    }
 }
