@@ -18,10 +18,10 @@ mod search;
 
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, Box as GtkBox, Button, CellRendererText, CheckButton,
-    Clipboard, Entry, FileChooserAction, FileChooserDialog, Menu, MenuBar, MenuItem, Orientation,
-    Paned, ResponseType, ScrolledWindow, Separator, TextBuffer, TextView, TreeStore, TreeView,
-    TreeViewColumn,
+    AccelGroup, Application, ApplicationWindow, Box as GtkBox, Button, CellRendererText,
+    CheckButton, Clipboard, Entry, FileChooserAction, FileChooserDialog, Menu, MenuBar, MenuItem,
+    Orientation, Paned, ResponseType, ScrolledWindow, Separator, TextBuffer, TextView, TreeStore,
+    TreeView, TreeViewColumn,
 };
 use json_reader::{parse_file, parse_text_content, ParseResult};
 use path_formatting::{build_array_path, build_object_path};
@@ -54,6 +54,13 @@ fn build_ui(app: &Application, initial_files: &[String]) {
         .default_width(1200)
         .default_height(800)
         .build();
+
+    // Create accelerator group for keyboard shortcuts
+    let accel_group = AccelGroup::new();
+    window.add_accel_group(&accel_group);
+
+    // Import for accelerator setup
+    use gtk::gdk::{keys::constants as keys, ModifierType};
 
     // Create paned widget for two-pane layout
     let paned = Paned::new(gtk::Orientation::Horizontal);
@@ -309,6 +316,14 @@ fn build_ui(app: &Application, initial_files: &[String]) {
 
     // Open menu item
     let open_menu_item = MenuItem::with_label("Open");
+    gtk::prelude::GtkMenuItemExt::set_accel_path(&open_menu_item, Some("<Primary>o"));
+    open_menu_item.add_accelerator(
+        "activate",
+        &accel_group,
+        *keys::o as u32,
+        ModifierType::CONTROL_MASK,
+        gtk::AccelFlags::VISIBLE,
+    );
     let tree_store_for_open = tree_store.clone();
     let value_text_buffer_for_open = value_text_buffer.clone();
     let window_clone = window.clone();
@@ -353,6 +368,22 @@ fn build_ui(app: &Application, initial_files: &[String]) {
 
     file_menu.append(&open_menu_item);
 
+    // Exit menu item
+    let exit_menu_item = MenuItem::with_label("Exit");
+    gtk::prelude::GtkMenuItemExt::set_accel_path(&exit_menu_item, Some("<Alt>F4"));
+    exit_menu_item.add_accelerator(
+        "activate",
+        &accel_group,
+        *keys::F4 as u32,
+        ModifierType::MOD1_MASK,
+        gtk::AccelFlags::VISIBLE,
+    );
+    let window_for_exit = window.clone();
+    exit_menu_item.connect_activate(move |_| {
+        window_for_exit.close();
+    });
+    file_menu.append(&exit_menu_item);
+
     // Edit menu
     let edit_menu = Menu::new();
     let edit_menu_item = MenuItem::with_label("Edit");
@@ -360,6 +391,14 @@ fn build_ui(app: &Application, initial_files: &[String]) {
 
     // Paste menu item
     let paste_menu_item = MenuItem::with_label("Paste");
+    gtk::prelude::GtkMenuItemExt::set_accel_path(&paste_menu_item, Some("<Primary>v"));
+    paste_menu_item.add_accelerator(
+        "activate",
+        &accel_group,
+        *keys::v as u32,
+        ModifierType::CONTROL_MASK,
+        gtk::AccelFlags::VISIBLE,
+    );
     let tree_store_for_clipboard = tree_store.clone();
     let value_text_buffer_for_clipboard = value_text_buffer.clone();
 
@@ -384,6 +423,14 @@ fn build_ui(app: &Application, initial_files: &[String]) {
 
     // Copy menu item
     let copy_menu_item = MenuItem::with_label("Copy");
+    gtk::prelude::GtkMenuItemExt::set_accel_path(&copy_menu_item, Some("<Primary>c"));
+    copy_menu_item.add_accelerator(
+        "activate",
+        &accel_group,
+        *keys::c as u32,
+        ModifierType::CONTROL_MASK,
+        gtk::AccelFlags::VISIBLE,
+    );
     let selection_for_copy = selection.clone();
     let value_text_buffer_for_copy = value_text_buffer.clone();
 
@@ -448,6 +495,13 @@ fn build_ui(app: &Application, initial_files: &[String]) {
     // Find menu item
     let find_menu_item = MenuItem::with_label("Find");
     gtk::prelude::GtkMenuItemExt::set_accel_path(&find_menu_item, Some("<Primary>f"));
+    find_menu_item.add_accelerator(
+        "activate",
+        &accel_group,
+        *keys::f as u32,
+        ModifierType::CONTROL_MASK,
+        gtk::AccelFlags::VISIBLE,
+    );
 
     edit_menu.append(&paste_menu_item);
     edit_menu.append(&copy_menu_item);
