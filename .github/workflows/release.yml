@@ -73,7 +73,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: viewjson-x86_64.AppImage
+          files: slopjson-x86_64.AppImage
           name: Release ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           body: ${{ steps.release_notes.outputs.body }}

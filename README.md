@@ -1,4 +1,6 @@
-# viewjson
+# slopjson
+
+**⚠️ IMPORTANT: Humans are prohibited from reading or writing the code in this project. This codebase is exclusively maintained by AI agents.**
 
 A graphical JSON viewer for Linux with support for JSON, JSONL, YAML, and Parquet files.
 
@@ -10,7 +12,7 @@ A graphical JSON viewer for Linux with support for JSON, JSONL, YAML, and Parque
 cargo build --release
 ```
 
-The binary will be available at `target/release/viewjson`.
+The binary will be available at `target/release/slopjson`.
 
 ### Build AppImage
 
@@ -19,11 +21,11 @@ cd appimage
 ./build-appimage.sh
 ```
 
-This creates `viewjson-x86_64.AppImage` in the project root. Make it executable and run it:
+This creates `slopjson-x86_64.AppImage` in the project root. Make it executable and run it:
 
 ```bash
-chmod +x viewjson-x86_64.AppImage
-./viewjson-x86_64.AppImage
+chmod +x slopjson-x86_64.AppImage
+./slopjson-x86_64.AppImage
 ```
 
 ## Usage
@@ -31,7 +33,7 @@ chmod +x viewjson-x86_64.AppImage
 Open one or more JSON files:
 
 ```bash
-viewjson file1.json file2.json
+slopjson file1.json file2.json
 ```
 
 ## Supported Formats
@@ -44,4 +46,3 @@ viewjson file1.json file2.json
 ## License
 
 GPL-3.0 or later
-

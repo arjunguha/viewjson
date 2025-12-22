@@ -37,7 +37,7 @@ fn main() {
     let file_paths: Vec<String> = std::env::args().skip(1).collect();
 
     let app = Application::builder()
-        .application_id("com.example.viewjson")
+        .application_id("com.example.slopjson")
         .build();
 
     let file_paths_clone = file_paths.clone();
@@ -52,7 +52,7 @@ fn main() {
 fn build_ui(app: &Application, initial_files: &[String]) {
     let window = ApplicationWindow::builder()
         .application(app)
-        .title("JSON Viewer")
+        .title("slopjson")
         .default_width(1200)
         .default_height(800)
         .build();

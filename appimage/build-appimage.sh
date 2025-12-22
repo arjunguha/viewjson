@@ -15,16 +15,16 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Change to project root
 cd "$PROJECT_ROOT"
 
-echo -e "${GREEN}Building AppImage for viewjson${NC}"
+echo -e "${GREEN}Building AppImage for slopjson${NC}"
 
 # Build release binary if not already built
-if [ ! -f "target/release/viewjson" ]; then
+if [ ! -f "target/release/slopjson" ]; then
     echo -e "${YELLOW}Building release binary...${NC}"
     cargo build --release
 fi
 
 # Create AppDir structure
-APPDIR="viewjson.AppDir"
+APPDIR="slopjson.AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 mkdir -p "$APPDIR/usr/share/applications"
@@ -32,39 +32,39 @@ mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
 # Copy binary
 echo -e "${YELLOW}Copying binary...${NC}"
-cp target/release/viewjson "$APPDIR/usr/bin/"
+cp target/release/slopjson "$APPDIR/usr/bin/"
 
 # Copy desktop file
 echo -e "${YELLOW}Copying desktop file...${NC}"
-cp appimage/viewjson.desktop "$APPDIR/usr/share/applications/"
-cp appimage/viewjson.desktop "$APPDIR/"
+cp appimage/slopjson.desktop "$APPDIR/usr/share/applications/"
+cp appimage/slopjson.desktop "$APPDIR/"
 
 # Create AppRun script (required for AppImage)
 echo -e "${YELLOW}Creating AppRun script...${NC}"
 cat > "$APPDIR/AppRun" << 'APPRUN_EOF'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
-exec "${HERE}/usr/bin/viewjson" "$@"
+exec "${HERE}/usr/bin/slopjson" "$@"
 APPRUN_EOF
 chmod +x "$APPDIR/AppRun"
 
 # Create and install icon
 echo -e "${YELLOW}Creating icon...${NC}"
-ICON_PATH="$APPDIR/usr/share/icons/hicolor/256x256/apps/viewjson.png"
+ICON_PATH="$APPDIR/usr/share/icons/hicolor/256x256/apps/slopjson.png"
 ICON_CREATED=false
 
 if command -v convert &> /dev/null; then
     if convert -size 256x256 xc:blue -pointsize 72 -fill white -gravity center -annotate +0+0 "JSON" "$ICON_PATH" 2>/dev/null; then
         ICON_CREATED=true
-        cp "$ICON_PATH" "$APPDIR/viewjson.png"
+        cp "$ICON_PATH" "$APPDIR/slopjson.png"
     fi
 fi
 
 # If icon creation failed, remove Icon line from desktop file to avoid errors
 if [ "$ICON_CREATED" = false ]; then
     echo -e "${YELLOW}Warning: Could not create icon, removing Icon entry from desktop file...${NC}"
-    sed -i '/^Icon=/d' "$APPDIR/viewjson.desktop"
-    sed -i '/^Icon=/d' "$APPDIR/usr/share/applications/viewjson.desktop"
+    sed -i '/^Icon=/d' "$APPDIR/slopjson.desktop"
+    sed -i '/^Icon=/d' "$APPDIR/usr/share/applications/slopjson.desktop"
 fi
 
 # Download linuxdeploy if not present
@@ -96,14 +96,14 @@ echo -e "${YELLOW}Bundling dependencies with linuxdeploy...${NC}"
 export LINUXDEPLOY="$LINUXDEPLOY"
 # Use --icon-file if icon exists
 ICON_ARG=""
-if [ -f "$APPDIR/usr/share/icons/hicolor/256x256/apps/viewjson.png" ]; then
-    ICON_ARG="--icon-file=$APPDIR/usr/share/icons/hicolor/256x256/apps/viewjson.png"
+if [ -f "$APPDIR/usr/share/icons/hicolor/256x256/apps/slopjson.png" ]; then
+    ICON_ARG="--icon-file=$APPDIR/usr/share/icons/hicolor/256x256/apps/slopjson.png"
 fi
 
 "$LINUXDEPLOY" \
     --appdir "$APPDIR" \
-    --executable "$APPDIR/usr/bin/viewjson" \
-    --desktop-file "$APPDIR/viewjson.desktop" \
+    --executable "$APPDIR/usr/bin/slopjson" \
+    --desktop-file "$APPDIR/slopjson.desktop" \
     $ICON_ARG \
     --plugin gtk \
     --output appimage || {
@@ -111,8 +111,8 @@ fi
     # Fallback: try without plugin
     "$LINUXDEPLOY" \
         --appdir "$APPDIR" \
-        --executable "$APPDIR/usr/bin/viewjson" \
-        --desktop-file "$APPDIR/viewjson.desktop" \
+        --executable "$APPDIR/usr/bin/slopjson" \
+        --desktop-file "$APPDIR/slopjson.desktop" \
         $ICON_ARG \
         --output appimage || true
 }
@@ -123,21 +123,21 @@ if [ ! -f "$APPDIR/AppRun" ]; then
     cat > "$APPDIR/AppRun" << 'APPRUN_EOF'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
-exec "${HERE}/usr/bin/viewjson" "$@"
+exec "${HERE}/usr/bin/slopjson" "$@"
 APPRUN_EOF
     chmod +x "$APPDIR/AppRun"
 fi
 
 # If linuxdeploy didn't create the AppImage, use appimagetool directly
-if [ ! -f "viewjson-x86_64.AppImage" ]; then
+if [ ! -f "slopjson-x86_64.AppImage" ]; then
     echo -e "${YELLOW}Creating AppImage with appimagetool...${NC}"
-    "$APPIMAGETOOL" "$APPDIR" viewjson-x86_64.AppImage
+    "$APPIMAGETOOL" "$APPDIR" slopjson-x86_64.AppImage
 fi
 
-if [ -f "viewjson-x86_64.AppImage" ]; then
-    echo -e "${GREEN}✓ AppImage created successfully: viewjson-x86_64.AppImage${NC}"
-    chmod +x viewjson-x86_64.AppImage
-    ls -lh viewjson-x86_64.AppImage
+if [ -f "slopjson-x86_64.AppImage" ]; then
+    echo -e "${GREEN}✓ AppImage created successfully: slopjson-x86_64.AppImage${NC}"
+    chmod +x slopjson-x86_64.AppImage
+    ls -lh slopjson-x86_64.AppImage
 else
     echo -e "${RED}✗ Failed to create AppImage${NC}"
     exit 1
