@@ -535,7 +535,8 @@ fn build_ui(app: &Application, initial_files: &[String]) {
          search_text: &str,
          case_sensitive: bool,
          search_matches: &std::rc::Rc<std::cell::RefCell<Vec<SearchMatch>>>,
-         search_current_index: &std::rc::Rc<std::cell::RefCell<Option<usize>>>| {
+         search_current_index: &std::rc::Rc<std::cell::RefCell<Option<usize>>>,
+         current_selection: Option<&gtk::TreePath>| {
             let mut matches = Vec::new();
             let search_text_lower = if case_sensitive {
                 search_text.to_string()
@@ -632,8 +633,36 @@ fn build_ui(app: &Application, initial_files: &[String]) {
             }
 
             let is_empty = matches.is_empty();
+            
+            // Find the starting index based on current selection (before moving matches)
+            let starting_index = if is_empty {
+                None
+            } else if let Some(current_path) = current_selection {
+                // Find the first match at or after the current selection
+                // Compare paths by depth and indices lexicographically
+                let current_depth = current_path.depth();
+                let current_indices: Vec<i32> = current_path.indices().to_vec();
+                
+                matches.iter().position(|m| {
+                    let match_depth = m.path.depth();
+                    let match_indices: Vec<i32> = m.path.indices().to_vec();
+                    
+                    // Compare lexicographically: first by depth, then by indices
+                    if current_depth < match_depth {
+                        true
+                    } else if current_depth > match_depth {
+                        false
+                    } else {
+                        // Same depth, compare indices lexicographically
+                        current_indices <= match_indices
+                    }
+                }).or(Some(0)) // If no match found after current position, start from beginning
+            } else {
+                Some(0) // No current selection, start from beginning
+            };
+            
             *search_matches.borrow_mut() = matches;
-            *search_current_index.borrow_mut() = if is_empty { None } else { Some(0) };
+            *search_current_index.borrow_mut() = starting_index;
         };
 
     // Function to navigate to search result and highlight the occurrence
@@ -828,12 +857,18 @@ fn build_ui(app: &Application, initial_files: &[String]) {
             *current_search_text_clone2.borrow_mut() = search_text.clone();
             *current_case_sensitive_clone2.borrow_mut() = case_sensitive;
 
+            // Get current selection path to start search from current view position
+            let current_path = selection_clone.selected().and_then(|(_model, iter)| {
+                tree_store_clone.path(&iter)
+            });
+
             perform_search(
                 &tree_store_clone,
                 &search_text,
                 case_sensitive,
                 &search_matches_clone2,
                 &search_current_index_clone2,
+                current_path.as_ref(),
             );
 
             let matches = search_matches_clone2.borrow();
@@ -896,12 +931,18 @@ fn build_ui(app: &Application, initial_files: &[String]) {
             *current_search_text_clone2.borrow_mut() = search_text.clone();
             *current_case_sensitive_clone2.borrow_mut() = case_sensitive;
 
+            // Get current selection path to start search from current view position
+            let current_path = selection_clone.selected().and_then(|(_model, iter)| {
+                tree_store_clone.path(&iter)
+            });
+
             perform_search(
                 &tree_store_clone,
                 &search_text,
                 case_sensitive,
                 &search_matches_clone2,
                 &search_current_index_clone2,
+                current_path.as_ref(),
             );
 
             let matches = search_matches_clone2.borrow();
