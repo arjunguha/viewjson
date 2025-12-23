@@ -13,12 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::path_formatting::{build_array_path, build_object_path};
-use crate::value_formatting::format_value_preview;
 use glib::ToValue;
 use gtk::prelude::{TreeStoreExt, TreeStoreExtManual};
 use gtk::{TreeIter, TreeStore};
 use serde_json::Value;
+use slopjson::path_formatting::{build_array_path, build_object_path};
+use slopjson::value_formatting::format_value_preview;
 
 /// Sets all column values for a tree node.
 ///

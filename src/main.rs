@@ -12,11 +12,8 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
-mod json_reader;
-mod path_formatting;
 mod search;
 mod tree_builder;
-mod value_formatting;
 
 use gtk::prelude::*;
 use gtk::{
@@ -25,11 +22,11 @@ use gtk::{
     Orientation, Paned, ResponseType, ScrolledWindow, Separator, TextBuffer, TextView, TreeStore,
     TreeView, TreeViewColumn,
 };
-use json_reader::{parse_file, parse_text_content, ParseResult};
 use search::{find_all_occurrences, find_occurrence_to_highlight};
+use slopjson::json_reader::{parse_file, parse_text_content, ParseResult};
+use slopjson::value_formatting::format_value_from_string;
 use std::path::Path;
 use tree_builder::{add_jsonl_to_tree, add_single_value_to_tree};
-use value_formatting::format_value_from_string;
 
 fn main() {
     // Read command-line arguments before GTK initialization

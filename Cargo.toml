@@ -3,14 +3,27 @@ name = "slopjson"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["gtk-app"]
+gtk-app = ["gtk", "gio", "glib"]
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "slopjson"
+path = "src/main.rs"
+required-features = ["gtk-app"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gtk = "0.18"
-gio = "0.18"
-glib = "0.18"
+gtk = { version = "0.18", optional = true }
+gio = { version = "0.18", optional = true }
+glib = { version = "0.18", optional = true }
 serde_json = "1.0"
 serde_yaml = "0.9"
 parquet = "55"
 arrow = "55"
 bytes = "1.7"
+serde = { version = "1.0", features = ["derive"] }

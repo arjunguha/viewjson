@@ -1334,6 +1334,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
@@ -1414,6 +1415,21 @@ name = "slab"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
+
+[[package]]
+name = "slopjson"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "bytes",
+ "gio",
+ "glib",
+ "gtk",
+ "parquet",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
 
 [[package]]
 name = "smallvec"
@@ -1581,20 +1597,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "viewjson"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "bytes",
- "gio",
- "glib",
- "gtk",
- "parquet",
- "serde_json",
- "serde_yaml",
-]
 
 [[package]]
 name = "wasi"
